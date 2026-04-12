@@ -40,6 +40,10 @@ const PLAYER_Y = GROUND_Y; // base of player is at ground
 const TILT_SPEED = 2.5; // radians per second
 const TILT_MAX_ANGLE = 0.45; // max tilt in radians (~26 degrees)
 
+// Jump
+const JUMP_FORCE = 1200; // px/s upward component
+const JUMP_LATERAL = 600; // px/s lateral component
+
 // Player state
 const players = [
   {
@@ -86,6 +90,9 @@ const SKYLINE = [
   { x: 990, w: 60, h: 75 },
 ];
 
+// Game state
+let gameState = 'playing'; // 'menu', 'playing', 'goalScored', 'matchOver'
+
 // --- Canvas Setup ---
 const canvas = document.getElementById('c');
 canvas.width = CANVAS_W;
@@ -98,6 +105,23 @@ let canvasScaleX = canvas.width / canvasRect.width;
 window.addEventListener('resize', () => {
   canvasRect = canvas.getBoundingClientRect();
   canvasScaleX = canvas.width / canvasRect.width;
+});
+
+// --- Jump ---
+function jumpPlayer(p) {
+  if (p.isAirborne) return;
+  p.isAirborne = true;
+  p.jumpX = p.x;
+  const lateralDir = Math.sin(p.angle);
+  p.velX = lateralDir * JUMP_LATERAL;
+  p.velY = -JUMP_FORCE;
+}
+
+canvas.addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  if (gameState === 'playing') {
+    jumpPlayer(players[1]); // players[1] is human (blue)
+  }
 });
 
 // --- Game Loop ---
@@ -139,6 +163,7 @@ function updatePlayers(dt) {
 }
 
 function update(dt) {
+  if (gameState !== 'playing') return;
   updatePlayers(dt);
 }
 
