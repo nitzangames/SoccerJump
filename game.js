@@ -216,6 +216,14 @@ const playerBodies = players.map((p, i) => {
 
 const KICK_STRENGTH = 800;
 
+// AI
+const AI_DIFFICULTY = [
+  { reactionDelay: 0.8, jumpChance: 0.5, name: 'easy' },
+  { reactionDelay: 0.4, jumpChance: 0.75, name: 'medium' },
+  { reactionDelay: 0.2, jumpChance: 0.9, name: 'hard' },
+];
+let aiDecisionCooldown = 0;
+
 world.onCollision = (bodyA, bodyB, contact) => {
   const ball = bodyA.userData === 'ball' ? bodyA : bodyB.userData === 'ball' ? bodyB : null;
   const other = ball === bodyA ? bodyB : bodyA;
@@ -240,7 +248,7 @@ world.onCollision = (bodyA, bodyB, contact) => {
 };
 
 // Game state
-let gameState = 'playing'; // 'menu', 'playing', 'goalScored', 'matchOver'
+let gameState = 'playing';
 let scores = [0, 0]; // [CPU, human]
 const WIN_SCORE = 5;
 let goalFlashTimer = 0;
@@ -268,6 +276,50 @@ function jumpPlayer(p) {
   const lateralDir = Math.sin(p.angle);
   p.velX = lateralDir * JUMP_LATERAL;
   p.velY = -JUMP_FORCE;
+}
+
+function updateAI(dt) {
+  const cpu = players[0];
+  if (cpu.isAirborne) return;
+
+  const humanScore = scores[1];
+  const diffIdx = humanScore <= 1 ? 0 : humanScore <= 3 ? 1 : 2;
+  const diff = AI_DIFFICULTY[diffIdx];
+
+  aiDecisionCooldown -= dt;
+  if (aiDecisionCooldown > 0) return;
+
+  const ballX = ballBody.position.x;
+  const ballVelX = ballBody.velocity.x;
+  const fieldCenter = CANVAS_W / 2;
+
+  const ballOnMySide = ballX < fieldCenter;
+  const ballComingToMe = ballVelX < -50;
+  const ballClose = Math.abs(ballX - cpu.x) < 300 && Math.abs(ballBody.position.y - (cpu.y - PLAYER_H / 2)) < PLAYER_H;
+
+  let shouldJump = false;
+
+  if (ballClose) {
+    shouldJump = Math.random() < diff.jumpChance;
+  } else if (ballComingToMe && ballOnMySide) {
+    shouldJump = Math.random() < diff.jumpChance * 0.6;
+  }
+
+  if (shouldJump) {
+    const tiltDir = Math.sin(cpu.angle);
+    const ballDir = ballX > cpu.x ? 1 : -1;
+    if (tiltDir * ballDir > -0.2) {
+      jumpPlayer(cpu);
+      aiDecisionCooldown = diff.reactionDelay;
+    }
+  }
+
+  if (!shouldJump && aiDecisionCooldown <= -1.5) {
+    if (Math.random() < 0.3) {
+      jumpPlayer(cpu);
+      aiDecisionCooldown = diff.reactionDelay + 0.5;
+    }
+  }
 }
 
 canvas.addEventListener('pointerdown', (e) => {
@@ -363,6 +415,7 @@ function resetRound() {
 function update(dt) {
   if (gameState === 'playing') {
     updatePlayers(dt);
+    updateAI(dt);
     world.step(dt);
   } else if (gameState === 'goalScored') {
     goalFlashTimer -= dt;
