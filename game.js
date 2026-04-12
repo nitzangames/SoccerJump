@@ -3,7 +3,7 @@ import { World, Body, Circle, Rectangle, Edge, Vec2 } from './physics2d/index.js
 // --- Constants ---
 const CANVAS_W = 1080;
 const CANVAS_H = 1920;
-const VERSION = 'v1.1.0';
+const VERSION = 'v1.1.1';
 
 // Field dimensions (in canvas pixels)
 const FIELD_TOP = 160;
@@ -37,7 +37,7 @@ const PLAYER_H = 140;
 const PLAYER_Y = GROUND_Y; // base of player is at ground
 
 // Tilt
-const TILT_SPEED = 2.5; // radians per second
+const TILT_SPEED = 3.125; // radians per second
 const TILT_MAX_ANGLE = 0.45; // max tilt in radians (~26 degrees)
 
 // Jump
