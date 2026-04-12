@@ -247,6 +247,49 @@ world.onCollision = (bodyA, bodyB, contact) => {
   }
 };
 
+// --- Particles ---
+const MAX_PARTICLES = 32;
+const particles = [];
+
+function spawnParticle(x, y, color) {
+  if (particles.length >= MAX_PARTICLES) particles.shift();
+  particles.push({
+    x, y,
+    size: 4 + Math.random() * 6,
+    life: 0.3,
+    maxLife: 0.3,
+    color,
+  });
+}
+
+function updateParticles(dt) {
+  for (let i = particles.length - 1; i >= 0; i--) {
+    particles[i].life -= dt;
+    if (particles[i].life <= 0) {
+      particles.splice(i, 1);
+    }
+  }
+}
+
+function drawParticles() {
+  for (const p of particles) {
+    const alpha = p.life / p.maxLife;
+    ctx.globalAlpha = alpha * 0.5;
+    ctx.fillStyle = p.color;
+    ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+  }
+  ctx.globalAlpha = 1;
+}
+
+// --- Screen Shake ---
+let shakeTimer = 0;
+let shakeIntensity = 0;
+
+function triggerShake(intensity, duration) {
+  shakeIntensity = intensity;
+  shakeTimer = duration;
+}
+
 // Game state
 let gameState = 'menu';
 let scores = [0, 0]; // [CPU, human]
@@ -394,6 +437,7 @@ function onGoalScored(scorer) {
   }
   lastScorer = scorer;
   goalFlashTimer = 1.5;
+  triggerShake(15, 0.3);
   gameState = 'goalScored';
 }
 
@@ -425,6 +469,11 @@ function update(dt) {
     updatePlayers(dt);
     updateAI(dt);
     world.step(dt);
+    updateParticles(dt);
+    const ballSpeed = ballBody.velocity.length();
+    if (ballSpeed > 200) {
+      spawnParticle(ballBody.position.x, ballBody.position.y, 'white');
+    }
   } else if (gameState === 'goalScored') {
     goalFlashTimer -= dt;
     if (goalFlashTimer <= 0) {
@@ -675,6 +724,14 @@ function drawMatchOver() {
 }
 
 function draw() {
+  if (shakeTimer > 0) {
+    shakeTimer -= 1 / 60;
+    const sx = (Math.random() - 0.5) * shakeIntensity * 2;
+    const sy = (Math.random() - 0.5) * shakeIntensity * 2;
+    ctx.save();
+    ctx.translate(sx, sy);
+  }
+
   drawField();
 
   if (gameState === 'menu') {
@@ -683,13 +740,19 @@ function draw() {
     drawPlayer(players[0]);
     drawPlayer(players[1]);
     drawBall();
+    drawParticles();
     drawHUD();
   } else if (gameState === 'matchOver') {
     drawPlayer(players[0]);
     drawPlayer(players[1]);
     drawBall();
+    drawParticles();
     drawHUD();
     drawMatchOver();
+  }
+
+  if (shakeTimer > 0) {
+    ctx.restore();
   }
 }
 
