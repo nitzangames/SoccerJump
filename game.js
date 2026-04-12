@@ -200,6 +200,45 @@ const rightGoalSensor = new Body({
 });
 world.addBody(rightGoalSensor);
 
+// Player collision bodies
+const playerBodies = players.map((p, i) => {
+  const body = new Body({
+    shape: new Rectangle(PLAYER_W - 20, PLAYER_H - 20),
+    position: new Vec2(p.x, p.y - PLAYER_H / 2),
+    mass: 50,
+    restitution: 0.3,
+    friction: 0.2,
+    userData: i === 0 ? 'playerCPU' : 'playerHuman',
+  });
+  world.addBody(body);
+  return body;
+});
+
+const KICK_STRENGTH = 800;
+
+world.onCollision = (bodyA, bodyB, contact) => {
+  const ball = bodyA.userData === 'ball' ? bodyA : bodyB.userData === 'ball' ? bodyB : null;
+  const other = ball === bodyA ? bodyB : bodyA;
+  if (!ball) return;
+
+  // Goal detection
+  if (other.userData === 'goalLeft') {
+    onGoalScored('human');
+    return;
+  }
+  if (other.userData === 'goalRight') {
+    onGoalScored('cpu');
+    return;
+  }
+
+  // Player-ball kick
+  if (other.userData === 'playerCPU' || other.userData === 'playerHuman') {
+    const kickDirX = other.userData === 'playerCPU' ? 1 : -1;
+    const impulse = new Vec2(kickDirX * KICK_STRENGTH, -KICK_STRENGTH * 0.5);
+    ball.applyImpulse(impulse);
+  }
+};
+
 // Game state
 let gameState = 'playing'; // 'menu', 'playing', 'goalScored', 'matchOver'
 
@@ -270,6 +309,20 @@ function updatePlayers(dt) {
       p.angle = Math.sin(p.tiltPhase) * TILT_MAX_ANGLE * p.tiltDirection;
     }
   }
+
+  // Sync physics collision bodies to player visual positions
+  for (let i = 0; i < players.length; i++) {
+    const p = players[i];
+    const b = playerBodies[i];
+    b.setPosition(p.x, p.y - PLAYER_H / 2);
+    b.angle = p.angle;
+    b.previousAngle = p.angle;
+    b.setVelocity(p.velX || 0, p.velY || 0);
+  }
+}
+
+function onGoalScored(scorer) {
+  console.log(scorer + ' scored!');
 }
 
 function update(dt) {
