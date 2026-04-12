@@ -241,6 +241,10 @@ world.onCollision = (bodyA, bodyB, contact) => {
 
 // Game state
 let gameState = 'playing'; // 'menu', 'playing', 'goalScored', 'matchOver'
+let scores = [0, 0]; // [CPU, human]
+const WIN_SCORE = 5;
+let goalFlashTimer = 0;
+let lastScorer = '';
 
 // --- Canvas Setup ---
 const canvas = document.getElementById('c');
@@ -322,13 +326,55 @@ function updatePlayers(dt) {
 }
 
 function onGoalScored(scorer) {
-  console.log(scorer + ' scored!');
+  if (gameState !== 'playing') return;
+  if (scorer === 'human') {
+    scores[1]++;
+  } else {
+    scores[0]++;
+  }
+  lastScorer = scorer;
+  goalFlashTimer = 1.5;
+  gameState = 'goalScored';
+}
+
+function resetRound() {
+  ballBody.setPosition(CANVAS_W / 2, GROUND_Y - BALL_RADIUS - 5);
+  ballBody.setVelocity(0, 0);
+  ballBody.angularVelocity = 0;
+  ballBody.wake();
+
+  players[0].x = FIELD_LEFT + GOAL_W + 180;
+  players[0].y = PLAYER_Y;
+  players[0].tiltPhase = 0;
+  players[0].angle = 0;
+  players[0].isAirborne = false;
+  players[0].velX = 0;
+  players[0].velY = 0;
+
+  players[1].x = FIELD_RIGHT - GOAL_W - 180;
+  players[1].y = PLAYER_Y;
+  players[1].tiltPhase = 0;
+  players[1].angle = 0;
+  players[1].isAirborne = false;
+  players[1].velX = 0;
+  players[1].velY = 0;
 }
 
 function update(dt) {
-  if (gameState !== 'playing') return;
-  updatePlayers(dt);
-  world.step(dt);
+  if (gameState === 'playing') {
+    updatePlayers(dt);
+    world.step(dt);
+  } else if (gameState === 'goalScored') {
+    goalFlashTimer -= dt;
+    if (goalFlashTimer <= 0) {
+      if (scores[0] >= WIN_SCORE || scores[1] >= WIN_SCORE) {
+        gameState = 'matchOver';
+      } else {
+        resetRound();
+        gameState = 'playing';
+      }
+    }
+  }
 }
 
 function drawGoal(x, isLeft) {
@@ -488,11 +534,53 @@ function drawBall() {
   ctx.strokeRect(bx - r, by - r, r * 2, r * 2);
 }
 
+function drawHUD() {
+  // CPU score (left)
+  ctx.fillStyle = CPU_COLOR;
+  ctx.font = 'bold 80px monospace';
+  ctx.textAlign = 'left';
+  ctx.fillText(scores[0], 60, 110);
+
+  ctx.fillStyle = 'rgba(255,255,255,0.4)';
+  ctx.font = '28px monospace';
+  ctx.fillText('CPU', 160, 110);
+
+  // Human score (right)
+  ctx.fillStyle = HUMAN_COLOR;
+  ctx.font = 'bold 80px monospace';
+  ctx.textAlign = 'right';
+  ctx.fillText(scores[1], CANVAS_W - 60, 110);
+
+  ctx.fillStyle = 'rgba(255,255,255,0.4)';
+  ctx.font = '28px monospace';
+  ctx.textAlign = 'right';
+  ctx.fillText('YOU', CANVAS_W - 160, 110);
+
+  // Center label
+  ctx.fillStyle = 'rgba(255,255,255,0.3)';
+  ctx.font = '24px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('FIRST TO 5', CANVAS_W / 2, 100);
+
+  // Goal flash overlay
+  if (gameState === 'goalScored' && goalFlashTimer > 0) {
+    const alpha = Math.min(1, goalFlashTimer * 2);
+    ctx.fillStyle = `rgba(255,255,255,${alpha * 0.3})`;
+    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
+    ctx.fillStyle = `rgba(255,255,255,${alpha})`;
+    ctx.font = 'bold 120px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('GOAL!', CANVAS_W / 2, CANVAS_H / 2);
+  }
+}
+
 function draw() {
   drawField();
   drawPlayer(players[0]);
   drawPlayer(players[1]);
   drawBall();
+  drawHUD();
 }
 
 requestAnimationFrame(loop);
