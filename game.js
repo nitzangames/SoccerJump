@@ -3,7 +3,7 @@ import { World, Body, Circle, Rectangle, Edge, Vec2 } from './physics2d/index.js
 // --- Constants ---
 const CANVAS_W = 1080;
 const CANVAS_H = 1920;
-const VERSION = 'v1.1.1';
+const VERSION = 'v1.1.2';
 
 // Field dimensions (in canvas pixels)
 const FIELD_TOP = 160;
@@ -711,20 +711,54 @@ function drawPlayer(p) {
   ctx.restore();
 }
 
+// Pre-render pixelated ball to offscreen canvas
+const ballCanvas = document.createElement('canvas');
+const ballSize = BALL_RADIUS * 2 + 4;
+ballCanvas.width = ballSize;
+ballCanvas.height = ballSize;
+const ballCtx = ballCanvas.getContext('2d');
+(() => {
+  const cx = ballSize / 2;
+  const cy = ballSize / 2;
+  const r = BALL_RADIUS;
+  const px = 4; // pixel size
+
+  // Draw circle filled with white "pixels"
+  for (let y = -r; y <= r; y += px) {
+    for (let x = -r; x <= r; x += px) {
+      if (x * x + y * y <= r * r) {
+        ballCtx.fillStyle = 'white';
+        ballCtx.fillRect(cx + x, cy + y, px, px);
+      }
+    }
+  }
+
+  // Dark pentagon pattern in center
+  for (let y = -6; y <= 4; y += px) {
+    for (let x = -6; x <= 4; x += px) {
+      if (x * x + y * y <= 36) {
+        ballCtx.fillStyle = '#333';
+        ballCtx.fillRect(cx + x, cy + y, px, px);
+      }
+    }
+  }
+
+  // Outline: slightly darker pixels around the edge
+  for (let y = -r; y <= r; y += px) {
+    for (let x = -r; x <= r; x += px) {
+      const distSq = x * x + y * y;
+      if (distSq <= r * r && distSq > (r - px) * (r - px)) {
+        ballCtx.fillStyle = '#ccc';
+        ballCtx.fillRect(cx + x, cy + y, px, px);
+      }
+    }
+  }
+})();
+
 function drawBall() {
   const bx = ballBody.renderPosition.x;
   const by = ballBody.renderPosition.y;
-  const r = BALL_RADIUS;
-
-  ctx.fillStyle = 'white';
-  ctx.fillRect(bx - r, by - r, r * 2, r * 2);
-
-  ctx.fillStyle = '#333';
-  ctx.fillRect(bx - 6, by - 6, 12, 12);
-
-  ctx.strokeStyle = '#999';
-  ctx.lineWidth = 2;
-  ctx.strokeRect(bx - r, by - r, r * 2, r * 2);
+  ctx.drawImage(ballCanvas, bx - ballSize / 2, by - ballSize / 2);
 }
 
 function drawHUD() {
