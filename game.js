@@ -248,7 +248,7 @@ world.onCollision = (bodyA, bodyB, contact) => {
 };
 
 // Game state
-let gameState = 'playing';
+let gameState = 'menu';
 let scores = [0, 0]; // [CPU, human]
 const WIN_SCORE = 5;
 let goalFlashTimer = 0;
@@ -324,8 +324,16 @@ function updateAI(dt) {
 
 canvas.addEventListener('pointerdown', (e) => {
   e.preventDefault();
-  if (gameState === 'playing') {
-    jumpPlayer(players[1]); // players[1] is human (blue)
+  if (gameState === 'menu') {
+    scores = [0, 0];
+    resetRound();
+    gameState = 'playing';
+  } else if (gameState === 'playing') {
+    jumpPlayer(players[1]);
+  } else if (gameState === 'matchOver') {
+    scores = [0, 0];
+    resetRound();
+    gameState = 'playing';
   }
 });
 
@@ -628,12 +636,61 @@ function drawHUD() {
   }
 }
 
+function drawMenu() {
+  ctx.fillStyle = 'white';
+  ctx.font = 'bold 100px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('SOCCER', CANVAS_W / 2, 700);
+  ctx.fillText('JUMP', CANVAS_W / 2, 820);
+
+  const pulse = Math.sin(performance.now() / 500) * 0.3 + 0.7;
+  ctx.fillStyle = `rgba(255,255,255,${pulse * 0.6})`;
+  ctx.font = '36px monospace';
+  ctx.fillText('TAP TO PLAY', CANVAS_W / 2, 1000);
+
+  ctx.fillStyle = 'rgba(255,255,255,0.3)';
+  ctx.font = '24px monospace';
+  ctx.fillText(VERSION, CANVAS_W / 2, CANVAS_H - 40);
+}
+
+function drawMatchOver() {
+  const humanWon = scores[1] >= WIN_SCORE;
+
+  ctx.fillStyle = 'rgba(0,0,0,0.6)';
+  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
+  ctx.fillStyle = humanWon ? '#4dabf7' : '#e74c3c';
+  ctx.font = 'bold 100px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText(humanWon ? 'YOU WIN!' : 'YOU LOSE', CANVAS_W / 2, CANVAS_H / 2 - 60);
+
+  ctx.fillStyle = 'white';
+  ctx.font = 'bold 64px monospace';
+  ctx.fillText(`${scores[0]} - ${scores[1]}`, CANVAS_W / 2, CANVAS_H / 2 + 40);
+
+  const pulse = Math.sin(performance.now() / 500) * 0.3 + 0.7;
+  ctx.fillStyle = `rgba(255,255,255,${pulse * 0.6})`;
+  ctx.font = '36px monospace';
+  ctx.fillText('TAP TO PLAY AGAIN', CANVAS_W / 2, CANVAS_H / 2 + 140);
+}
+
 function draw() {
   drawField();
-  drawPlayer(players[0]);
-  drawPlayer(players[1]);
-  drawBall();
-  drawHUD();
+
+  if (gameState === 'menu') {
+    drawMenu();
+  } else if (gameState === 'playing' || gameState === 'goalScored') {
+    drawPlayer(players[0]);
+    drawPlayer(players[1]);
+    drawBall();
+    drawHUD();
+  } else if (gameState === 'matchOver') {
+    drawPlayer(players[0]);
+    drawPlayer(players[1]);
+    drawBall();
+    drawHUD();
+    drawMatchOver();
+  }
 }
 
 requestAnimationFrame(loop);
