@@ -90,6 +90,116 @@ const SKYLINE = [
   { x: 990, w: 60, h: 75 },
 ];
 
+// --- Physics ---
+const world = new World({
+  gravity: new Vec2(0, 981),
+  fixedDt: 1 / 120,
+});
+
+// Ball
+const BALL_RADIUS = 20;
+const ballBody = new Body({
+  shape: new Circle(BALL_RADIUS),
+  position: new Vec2(CANVAS_W / 2, GROUND_Y - BALL_RADIUS - 5),
+  mass: 0.5,
+  restitution: 0.6,
+  friction: 0.4,
+  userData: 'ball',
+  linearDamping: 0.3,
+});
+world.addBody(ballBody);
+
+// Ground
+const groundBody = new Body({
+  shape: new Edge(new Vec2(-600, 0), new Vec2(600, 0)),
+  position: new Vec2(CANVAS_W / 2, GROUND_Y),
+  isStatic: true,
+  userData: 'ground',
+});
+world.addBody(groundBody);
+
+// Ceiling
+const ceilingBody = new Body({
+  shape: new Edge(new Vec2(600, 0), new Vec2(-600, 0)),
+  position: new Vec2(CANVAS_W / 2, FIELD_TOP + 20),
+  isStatic: true,
+  userData: 'ceiling',
+});
+world.addBody(ceilingBody);
+
+// Left wall (above left goal)
+const leftWallBody = new Body({
+  shape: new Edge(new Vec2(0, 400), new Vec2(0, -400)),
+  position: new Vec2(FIELD_LEFT + GOAL_W, GROUND_Y - GOAL_H - 200),
+  isStatic: true,
+  userData: 'wall',
+});
+world.addBody(leftWallBody);
+
+// Right wall (above right goal)
+const rightWallBody = new Body({
+  shape: new Edge(new Vec2(0, -400), new Vec2(0, 400)),
+  position: new Vec2(FIELD_RIGHT - GOAL_W, GROUND_Y - GOAL_H - 200),
+  isStatic: true,
+  userData: 'wall',
+});
+world.addBody(rightWallBody);
+
+// Goal back walls
+const leftGoalBack = new Body({
+  shape: new Edge(new Vec2(0, -200), new Vec2(0, 200)),
+  position: new Vec2(FIELD_LEFT + 5, GROUND_Y - GOAL_H / 2),
+  isStatic: true,
+  userData: 'goalWall',
+});
+world.addBody(leftGoalBack);
+
+const rightGoalBack = new Body({
+  shape: new Edge(new Vec2(0, 200), new Vec2(0, -200)),
+  position: new Vec2(FIELD_RIGHT - 5, GROUND_Y - GOAL_H / 2),
+  isStatic: true,
+  userData: 'goalWall',
+});
+world.addBody(rightGoalBack);
+
+// Goal crossbars
+const leftCrossbar = new Body({
+  shape: new Edge(new Vec2(-GOAL_W, 0), new Vec2(0, 0)),
+  position: new Vec2(FIELD_LEFT + GOAL_W, GROUND_Y - GOAL_H),
+  isStatic: true,
+  userData: 'goalWall',
+  restitution: 0.5,
+});
+world.addBody(leftCrossbar);
+
+const rightCrossbar = new Body({
+  shape: new Edge(new Vec2(0, 0), new Vec2(GOAL_W, 0)),
+  position: new Vec2(FIELD_RIGHT - GOAL_W, GROUND_Y - GOAL_H),
+  isStatic: true,
+  userData: 'goalWall',
+  restitution: 0.5,
+});
+world.addBody(rightCrossbar);
+
+// Goal sensors
+const leftGoalSensor = new Body({
+  shape: new Rectangle(GOAL_W - 20, GOAL_H - 20),
+  position: new Vec2(FIELD_LEFT + GOAL_W / 2, GROUND_Y - GOAL_H / 2),
+  isStatic: true,
+  isSensor: true,
+  userData: 'goalLeft',
+});
+world.addBody(leftGoalSensor);
+
+const rightGoalSensor = new Body({
+  shape: new Rectangle(GOAL_W - 20, GOAL_H - 20),
+  position: new Vec2(FIELD_RIGHT - GOAL_W / 2, GROUND_Y - GOAL_H / 2),
+  isStatic: true,
+  isSensor: true,
+  userData: 'goalRight',
+});
+world.addBody(rightGoalSensor);
+
 // Game state
 let gameState = 'playing'; // 'menu', 'playing', 'goalScored', 'matchOver'
 
@@ -165,6 +275,7 @@ function updatePlayers(dt) {
 function update(dt) {
   if (gameState !== 'playing') return;
   updatePlayers(dt);
+  world.step(dt);
 }
 
 function drawGoal(x, isLeft) {
@@ -308,10 +419,27 @@ function drawPlayer(p) {
   ctx.restore();
 }
 
+function drawBall() {
+  const bx = ballBody.renderPosition.x;
+  const by = ballBody.renderPosition.y;
+  const r = BALL_RADIUS;
+
+  ctx.fillStyle = 'white';
+  ctx.fillRect(bx - r, by - r, r * 2, r * 2);
+
+  ctx.fillStyle = '#333';
+  ctx.fillRect(bx - 6, by - 6, 12, 12);
+
+  ctx.strokeStyle = '#999';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(bx - r, by - r, r * 2, r * 2);
+}
+
 function draw() {
   drawField();
   drawPlayer(players[0]);
   drawPlayer(players[1]);
+  drawBall();
 }
 
 requestAnimationFrame(loop);
