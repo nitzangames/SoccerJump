@@ -31,6 +31,47 @@ const CPU_COLOR_LIGHT = '#ff6b6b';
 const HUMAN_COLOR = '#3498db';
 const HUMAN_COLOR_LIGHT = '#5dade2';
 
+// Player dimensions
+const PLAYER_W = 120;
+const PLAYER_H = 280;
+const PLAYER_Y = GROUND_Y; // base of player is at ground
+
+// Tilt
+const TILT_SPEED = 2.5; // radians per second
+const TILT_MAX_ANGLE = 0.45; // max tilt in radians (~26 degrees)
+
+// Player state
+const players = [
+  {
+    x: FIELD_LEFT + GOAL_W + 180,
+    y: PLAYER_Y,
+    tiltPhase: 0,
+    tiltDirection: 1,
+    angle: 0,
+    color: CPU_COLOR,
+    colorLight: CPU_COLOR_LIGHT,
+    isHuman: false,
+    isAirborne: false,
+    velX: 0,
+    velY: 0,
+    jumpX: 0,
+  },
+  {
+    x: FIELD_RIGHT - GOAL_W - 180,
+    y: PLAYER_Y,
+    tiltPhase: 0,
+    tiltDirection: -1,
+    angle: 0,
+    color: HUMAN_COLOR,
+    colorLight: HUMAN_COLOR_LIGHT,
+    isHuman: true,
+    isAirborne: false,
+    velX: 0,
+    velY: 0,
+    jumpX: 0,
+  },
+];
+
 // Skyline buildings (x, width, height offsets from FIELD_TOP)
 const SKYLINE = [
   { x: 60, w: 80, h: 120 },
@@ -72,8 +113,33 @@ function loop(time) {
   requestAnimationFrame(loop);
 }
 
+function updatePlayers(dt) {
+  for (const p of players) {
+    if (p.isAirborne) {
+      p.velY += 2500 * dt;
+      p.x += p.velX * dt;
+      p.y += p.velY * dt;
+
+      if (p.y >= PLAYER_Y) {
+        p.y = PLAYER_Y;
+        p.isAirborne = false;
+        p.velX = 0;
+        p.velY = 0;
+      }
+
+      const minX = FIELD_LEFT + GOAL_W + PLAYER_W / 2;
+      const maxX = FIELD_RIGHT - GOAL_W - PLAYER_W / 2;
+      if (p.x < minX) p.x = minX;
+      if (p.x > maxX) p.x = maxX;
+    } else {
+      p.tiltPhase += TILT_SPEED * dt;
+      p.angle = Math.sin(p.tiltPhase) * TILT_MAX_ANGLE * p.tiltDirection;
+    }
+  }
+}
+
 function update(dt) {
-  // placeholder
+  updatePlayers(dt);
 }
 
 function drawGoal(x, isLeft) {
@@ -175,8 +241,52 @@ function drawField() {
   ctx.fillText(VERSION, CANVAS_W / 2, CANVAS_H - 20);
 }
 
+function drawPlayer(p) {
+  ctx.save();
+  ctx.translate(p.x, p.y);
+  ctx.rotate(p.angle);
+
+  const hw = PLAYER_W / 2;
+  const hh = PLAYER_H;
+
+  // Main body
+  ctx.fillStyle = p.color;
+  ctx.fillRect(-hw, -hh, PLAYER_W, PLAYER_H);
+
+  // Rounded top
+  ctx.fillRect(-hw + 8, -hh - 16, PLAYER_W - 16, 16);
+  ctx.fillRect(-hw + 20, -hh - 28, PLAYER_W - 40, 12);
+
+  // Lighter highlight
+  ctx.fillStyle = p.colorLight;
+  ctx.fillRect(-hw + 10, -hh + 10, PLAYER_W / 3, PLAYER_H - 40);
+
+  // Head area
+  ctx.fillStyle = '#f5c6a0';
+  ctx.fillRect(-hw + 16, -hh - 8, PLAYER_W - 32, 60);
+
+  // Eyes
+  ctx.fillStyle = '#333';
+  ctx.fillRect(-hw + 28, -hh + 12, 14, 18);
+  ctx.fillRect(-hw + PLAYER_W - 42, -hh + 12, 14, 18);
+
+  // Eye whites
+  ctx.fillStyle = 'white';
+  ctx.fillRect(-hw + 30, -hh + 14, 10, 12);
+  ctx.fillRect(-hw + PLAYER_W - 40, -hh + 14, 10, 12);
+
+  // Pupils
+  ctx.fillStyle = '#333';
+  ctx.fillRect(-hw + 34, -hh + 18, 5, 6);
+  ctx.fillRect(-hw + PLAYER_W - 36, -hh + 18, 5, 6);
+
+  ctx.restore();
+}
+
 function draw() {
   drawField();
+  drawPlayer(players[0]);
+  drawPlayer(players[1]);
 }
 
 requestAnimationFrame(loop);
