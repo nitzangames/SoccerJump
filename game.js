@@ -3,7 +3,7 @@ import { World, Body, Circle, Rectangle, Edge, Vec2 } from './physics2d/index.js
 // --- Constants ---
 const CANVAS_W = 1080;
 const CANVAS_H = 1920;
-const VERSION = 'v1.0.0';
+const VERSION = 'v1.0.1';
 
 // Field dimensions (in canvas pixels)
 const FIELD_TOP = 160;
