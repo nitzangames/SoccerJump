@@ -3,7 +3,7 @@ import { World, Body, Circle, Rectangle, Edge, Vec2 } from './physics2d/index.js
 // --- Constants ---
 const CANVAS_W = 1080;
 const CANVAS_H = 1920;
-const VERSION = 'v1.0.3';
+const VERSION = 'v1.0.4';
 
 // Field dimensions (in canvas pixels)
 const FIELD_TOP = 160;
@@ -224,9 +224,9 @@ const KICK_STRENGTH = 800;
 
 // AI
 const AI_DIFFICULTY = [
-  { reactionDelay: 0.8, jumpChance: 0.5, name: 'easy' },
-  { reactionDelay: 0.4, jumpChance: 0.75, name: 'medium' },
-  { reactionDelay: 0.2, jumpChance: 0.9, name: 'hard' },
+  { reactionDelay: 0.6, jumpChance: 0.6, waitForAngle: false, name: 'easy' },
+  { reactionDelay: 0.3, jumpChance: 0.85, waitForAngle: true, name: 'medium' },
+  { reactionDelay: 0.15, jumpChance: 0.95, waitForAngle: true, name: 'hard' },
 ];
 let aiDecisionCooldown = 0;
 
@@ -339,34 +339,87 @@ function updateAI(dt) {
   if (aiDecisionCooldown > 0) return;
 
   const ballX = ballBody.position.x;
+  const ballY = ballBody.position.y;
   const ballVelX = ballBody.velocity.x;
+  const ballVelY = ballBody.velocity.y;
   const fieldCenter = CANVAS_W / 2;
+  const myGoalX = FIELD_LEFT + GOAL_W;
+
+  // Predict where the ball will be in ~0.5s
+  const predictX = ballX + ballVelX * 0.5;
+  const predictY = ballY + ballVelY * 0.5;
 
   const ballOnMySide = ballX < fieldCenter;
-  const ballComingToMe = ballVelX < -50;
-  const ballClose = Math.abs(ballX - cpu.x) < 300 && Math.abs(ballBody.position.y - (cpu.y - PLAYER_H / 2)) < PLAYER_H;
+  const ballComingToMe = ballVelX < -30;
+  const ballHeadingToGoal = predictX < myGoalX + 100;
+  const distToBall = Math.abs(ballX - cpu.x);
+  const ballClose = distToBall < 250;
+  const ballVeryClose = distToBall < 150;
+
+  // Urgency: higher when ball is near our goal
+  const goalDanger = ballX < myGoalX + 200 && ballComingToMe;
 
   let shouldJump = false;
+  let urgency = 0;
 
-  if (ballClose) {
+  if (goalDanger) {
+    // Ball heading toward my goal — high urgency, jump to defend
+    shouldJump = true;
+    urgency = 1.0;
+  } else if (ballVeryClose) {
+    // Ball right next to me — kick it!
     shouldJump = Math.random() < diff.jumpChance;
-  } else if (ballComingToMe && ballOnMySide) {
-    shouldJump = Math.random() < diff.jumpChance * 0.6;
+    urgency = 0.8;
+  } else if (ballClose && ballOnMySide) {
+    // Ball nearby on my side — go for it
+    shouldJump = Math.random() < diff.jumpChance * 0.8;
+    urgency = 0.6;
+  } else if (ballComingToMe) {
+    // Ball heading toward me — prepare to intercept
+    shouldJump = Math.random() < diff.jumpChance * 0.5;
+    urgency = 0.4;
+  } else if (!ballOnMySide && distToBall < 400) {
+    // Ball on opponent's side but reachable — attack
+    shouldJump = Math.random() < diff.jumpChance * 0.4;
+    urgency = 0.3;
   }
 
   if (shouldJump) {
-    const tiltDir = Math.sin(cpu.angle);
-    const ballDir = ballX > cpu.x ? 1 : -1;
-    if (tiltDir * ballDir > -0.2) {
-      jumpPlayer(cpu);
-      aiDecisionCooldown = diff.reactionDelay;
+    const tiltAngle = cpu.angle;
+    const tiltDir = Math.sin(tiltAngle);
+
+    // Where do we want to go? Toward the ball
+    const wantDir = ballX > cpu.x ? 1 : -1;
+
+    if (diff.waitForAngle) {
+      // Smart AI: wait for tilt to align with desired direction
+      // Jump when tilting toward the ball (tiltDir matches wantDir)
+      const alignment = tiltDir * wantDir;
+
+      if (alignment > 0.15) {
+        // Good angle — jump now
+        jumpPlayer(cpu);
+        aiDecisionCooldown = diff.reactionDelay;
+      } else if (urgency >= 0.8 && alignment > -0.1) {
+        // Very urgent and angle is at least neutral — jump anyway
+        jumpPlayer(cpu);
+        aiDecisionCooldown = diff.reactionDelay;
+      }
+      // Otherwise wait for a better tilt angle (don't set cooldown)
+    } else {
+      // Dumb AI: just jump whenever, don't care about angle
+      if (tiltDir * wantDir > -0.3) {
+        jumpPlayer(cpu);
+        aiDecisionCooldown = diff.reactionDelay;
+      }
     }
   }
 
-  if (!shouldJump && aiDecisionCooldown <= -1.5) {
-    if (Math.random() < 0.3) {
+  // Idle jump: if nothing has happened for a while, jump to stay active
+  if (!shouldJump && aiDecisionCooldown <= -2.0) {
+    if (Math.random() < 0.2) {
       jumpPlayer(cpu);
-      aiDecisionCooldown = diff.reactionDelay + 0.5;
+      aiDecisionCooldown = diff.reactionDelay + 0.3;
     }
   }
 }
