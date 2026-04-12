@@ -3,7 +3,7 @@ import { World, Body, Circle, Rectangle, Edge, Vec2 } from './physics2d/index.js
 // --- Constants ---
 const CANVAS_W = 1080;
 const CANVAS_H = 1920;
-const VERSION = 'v0.1.0';
+const VERSION = 'v1.0.0';
 
 // Field dimensions (in canvas pixels)
 const FIELD_TOP = 160;
@@ -573,17 +573,21 @@ function drawField() {
   ctx.fillStyle = '#12082a';
   ctx.fillRect(0, FIELD_BOTTOM, CANVAS_W, CANVAS_H - FIELD_BOTTOM);
 
-  // "TAP TO JUMP" text
-  ctx.fillStyle = 'rgba(255,255,255,0.6)';
-  ctx.font = 'bold 56px monospace';
-  ctx.textAlign = 'center';
-  ctx.fillText('TAP TO JUMP', CANVAS_W / 2, FIELD_BOTTOM + 120);
+  // "TAP TO JUMP" text (only during gameplay)
+  if (gameState === 'playing' || gameState === 'goalScored') {
+    ctx.fillStyle = 'rgba(255,255,255,0.3)';
+    ctx.font = 'bold 40px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('TAP TO JUMP', CANVAS_W / 2, FIELD_BOTTOM + 120);
+  }
 
-  // Version string
-  ctx.fillStyle = 'rgba(255,255,255,0.3)';
-  ctx.font = '24px monospace';
-  ctx.textAlign = 'center';
-  ctx.fillText(VERSION, CANVAS_W / 2, CANVAS_H - 20);
+  // Version string (only during gameplay — menu draws its own)
+  if (gameState !== 'menu') {
+    ctx.fillStyle = 'rgba(255,255,255,0.3)';
+    ctx.font = '24px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(VERSION, CANVAS_W / 2, CANVAS_H - 20);
+  }
 }
 
 function drawPlayer(p) {
@@ -686,17 +690,20 @@ function drawHUD() {
 }
 
 function drawMenu() {
+  // Title below the field
   ctx.fillStyle = 'white';
   ctx.font = 'bold 100px monospace';
   ctx.textAlign = 'center';
-  ctx.fillText('SOCCER', CANVAS_W / 2, 700);
-  ctx.fillText('JUMP', CANVAS_W / 2, 820);
+  ctx.fillText('SOCCER', CANVAS_W / 2, FIELD_BOTTOM + 160);
+  ctx.fillText('JUMP', CANVAS_W / 2, FIELD_BOTTOM + 280);
 
+  // Pulsing tap prompt
   const pulse = Math.sin(performance.now() / 500) * 0.3 + 0.7;
   ctx.fillStyle = `rgba(255,255,255,${pulse * 0.6})`;
   ctx.font = '36px monospace';
-  ctx.fillText('TAP TO PLAY', CANVAS_W / 2, 1000);
+  ctx.fillText('TAP TO PLAY', CANVAS_W / 2, FIELD_BOTTOM + 420);
 
+  // Version
   ctx.fillStyle = 'rgba(255,255,255,0.3)';
   ctx.font = '24px monospace';
   ctx.fillText(VERSION, CANVAS_W / 2, CANVAS_H - 40);
