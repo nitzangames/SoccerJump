@@ -32,8 +32,8 @@ const HUMAN_COLOR = '#3498db';
 const HUMAN_COLOR_LIGHT = '#5dade2';
 
 // Player dimensions
-const PLAYER_W = 120;
-const PLAYER_H = 280;
+const PLAYER_W = 60;
+const PLAYER_H = 140;
 const PLAYER_Y = GROUND_Y; // base of player is at ground
 
 // Tilt
@@ -43,6 +43,9 @@ const TILT_MAX_ANGLE = 0.45; // max tilt in radians (~26 degrees)
 // Jump
 const JUMP_FORCE = 1200; // px/s upward component
 const JUMP_LATERAL = 600; // px/s lateral component
+
+// Ball
+const BALL_MAX_SPEED = 1200; // px/s
 
 // Player state
 const players = [
@@ -470,7 +473,22 @@ function update(dt) {
     updateAI(dt);
     world.step(dt);
     updateParticles(dt);
+
+    // Clamp ball speed
     const ballSpeed = ballBody.velocity.length();
+    if (ballSpeed > BALL_MAX_SPEED) {
+      const scale = BALL_MAX_SPEED / ballSpeed;
+      ballBody.velocity.x *= scale;
+      ballBody.velocity.y *= scale;
+    }
+
+    // Ball out of bounds — reset round
+    const bx = ballBody.position.x;
+    const by = ballBody.position.y;
+    if (bx < -50 || bx > CANVAS_W + 50 || by < -50 || by > CANVAS_H + 50) {
+      resetRound();
+    }
+
     if (ballSpeed > 200) {
       spawnParticle(ballBody.position.x, ballBody.position.y, 'white');
     }
@@ -603,31 +621,31 @@ function drawPlayer(p) {
   ctx.fillRect(-hw, -hh, PLAYER_W, PLAYER_H);
 
   // Rounded top
-  ctx.fillRect(-hw + 8, -hh - 16, PLAYER_W - 16, 16);
-  ctx.fillRect(-hw + 20, -hh - 28, PLAYER_W - 40, 12);
+  ctx.fillRect(-hw + 4, -hh - 8, PLAYER_W - 8, 8);
+  ctx.fillRect(-hw + 10, -hh - 14, PLAYER_W - 20, 6);
 
   // Lighter highlight
   ctx.fillStyle = p.colorLight;
-  ctx.fillRect(-hw + 10, -hh + 10, PLAYER_W / 3, PLAYER_H - 40);
+  ctx.fillRect(-hw + 5, -hh + 5, PLAYER_W / 3, PLAYER_H - 20);
 
   // Head area
   ctx.fillStyle = '#f5c6a0';
-  ctx.fillRect(-hw + 16, -hh - 8, PLAYER_W - 32, 60);
+  ctx.fillRect(-hw + 8, -hh - 4, PLAYER_W - 16, 30);
 
   // Eyes
   ctx.fillStyle = '#333';
-  ctx.fillRect(-hw + 28, -hh + 12, 14, 18);
-  ctx.fillRect(-hw + PLAYER_W - 42, -hh + 12, 14, 18);
+  ctx.fillRect(-hw + 14, -hh + 6, 7, 9);
+  ctx.fillRect(-hw + PLAYER_W - 21, -hh + 6, 7, 9);
 
   // Eye whites
   ctx.fillStyle = 'white';
-  ctx.fillRect(-hw + 30, -hh + 14, 10, 12);
-  ctx.fillRect(-hw + PLAYER_W - 40, -hh + 14, 10, 12);
+  ctx.fillRect(-hw + 15, -hh + 7, 5, 6);
+  ctx.fillRect(-hw + PLAYER_W - 20, -hh + 7, 5, 6);
 
   // Pupils
   ctx.fillStyle = '#333';
-  ctx.fillRect(-hw + 34, -hh + 18, 5, 6);
-  ctx.fillRect(-hw + PLAYER_W - 36, -hh + 18, 5, 6);
+  ctx.fillRect(-hw + 17, -hh + 9, 3, 3);
+  ctx.fillRect(-hw + PLAYER_W - 18, -hh + 9, 3, 3);
 
   ctx.restore();
 }
