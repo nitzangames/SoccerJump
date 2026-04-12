@@ -3,7 +3,7 @@ import { World, Body, Circle, Rectangle, Edge, Vec2 } from './physics2d/index.js
 // --- Constants ---
 const CANVAS_W = 1080;
 const CANVAS_H = 1920;
-const VERSION = 'v1.0.1';
+const VERSION = 'v1.0.2';
 
 // Field dimensions (in canvas pixels)
 const FIELD_TOP = 160;
@@ -32,8 +32,8 @@ const HUMAN_COLOR = '#3498db';
 const HUMAN_COLOR_LIGHT = '#5dade2';
 
 // Player dimensions
-const PLAYER_W = 60;
-const PLAYER_H = 140;
+const PLAYER_W = 30;
+const PLAYER_H = 70;
 const PLAYER_Y = GROUND_Y; // base of player is at ground
 
 // Tilt
@@ -621,31 +621,26 @@ function drawPlayer(p) {
   ctx.fillRect(-hw, -hh, PLAYER_W, PLAYER_H);
 
   // Rounded top
-  ctx.fillRect(-hw + 4, -hh - 8, PLAYER_W - 8, 8);
-  ctx.fillRect(-hw + 10, -hh - 14, PLAYER_W - 20, 6);
+  ctx.fillRect(-hw + 2, -hh - 4, PLAYER_W - 4, 4);
+  ctx.fillRect(-hw + 5, -hh - 7, PLAYER_W - 10, 3);
 
   // Lighter highlight
   ctx.fillStyle = p.colorLight;
-  ctx.fillRect(-hw + 5, -hh + 5, PLAYER_W / 3, PLAYER_H - 20);
+  ctx.fillRect(-hw + 3, -hh + 3, PLAYER_W / 3, PLAYER_H - 10);
 
   // Head area
   ctx.fillStyle = '#f5c6a0';
-  ctx.fillRect(-hw + 8, -hh - 4, PLAYER_W - 16, 30);
+  ctx.fillRect(-hw + 4, -hh - 2, PLAYER_W - 8, 15);
 
   // Eyes
   ctx.fillStyle = '#333';
-  ctx.fillRect(-hw + 14, -hh + 6, 7, 9);
-  ctx.fillRect(-hw + PLAYER_W - 21, -hh + 6, 7, 9);
+  ctx.fillRect(-hw + 7, -hh + 3, 4, 5);
+  ctx.fillRect(-hw + PLAYER_W - 11, -hh + 3, 4, 5);
 
   // Eye whites
   ctx.fillStyle = 'white';
-  ctx.fillRect(-hw + 15, -hh + 7, 5, 6);
-  ctx.fillRect(-hw + PLAYER_W - 20, -hh + 7, 5, 6);
-
-  // Pupils
-  ctx.fillStyle = '#333';
-  ctx.fillRect(-hw + 17, -hh + 9, 3, 3);
-  ctx.fillRect(-hw + PLAYER_W - 18, -hh + 9, 3, 3);
+  ctx.fillRect(-hw + 8, -hh + 4, 3, 3);
+  ctx.fillRect(-hw + PLAYER_W - 10, -hh + 4, 3, 3);
 
   ctx.restore();
 }
