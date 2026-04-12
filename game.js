@@ -3,7 +3,7 @@ import { World, Body, Circle, Rectangle, Edge, Vec2 } from './physics2d/index.js
 // --- Constants ---
 const CANVAS_W = 1080;
 const CANVAS_H = 1920;
-const VERSION = 'v1.0.9';
+const VERSION = 'v1.1.0';
 
 // Field dimensions (in canvas pixels)
 const FIELD_TOP = 160;
@@ -329,6 +329,7 @@ function jumpPlayer(p) {
 
 function updateAI(dt) {
   const cpu = players[0];
+  const human = players[1];
   if (cpu.isAirborne) return;
 
   const humanScore = scores[1];
@@ -347,14 +348,19 @@ function updateAI(dt) {
 
   // Predict where the ball will be in ~0.5s
   const predictX = ballX + ballVelX * 0.5;
-  const predictY = ballY + ballVelY * 0.5;
 
   const ballOnMySide = ballX < fieldCenter;
   const ballComingToMe = ballVelX < -30;
-  const ballHeadingToGoal = predictX < myGoalX + 100;
   const distToBall = Math.abs(ballX - cpu.x);
   const ballClose = distToBall < 250;
   const ballVeryClose = distToBall < 150;
+
+  // Key insight: if the human is airborne and ball is still on the ground,
+  // DON'T jump — stay grounded to block/kick when they land
+  const humanAirborne = human.isAirborne;
+  const ballOnGround = ballY > GROUND_Y - BALL_RADIUS - 30;
+  const ballStationary = Math.abs(ballVelX) < 100 && Math.abs(ballVelY) < 100;
+  const shouldStayGrounded = humanAirborne && ballOnGround && !ballComingToMe;
 
   // Urgency: higher when ball is near our goal
   const goalDanger = ballX < myGoalX + 200 && ballComingToMe;
@@ -363,25 +369,35 @@ function updateAI(dt) {
   let urgency = 0;
 
   if (goalDanger) {
-    // Ball heading toward my goal — high urgency, jump to defend
+    // Ball heading toward my goal — always defend regardless
     shouldJump = true;
     urgency = 1.0;
-  } else if (ballVeryClose) {
-    // Ball right next to me — kick it!
+  } else if (shouldStayGrounded) {
+    // Human is in the air — wait on the ground to counter
+    shouldJump = false;
+    aiDecisionCooldown = 0.1; // check again soon
+  } else if (ballVeryClose && !ballStationary) {
+    // Ball moving near me — kick it
     shouldJump = Math.random() < diff.jumpChance;
     urgency = 0.8;
+  } else if (ballVeryClose && ballStationary) {
+    // Ball sitting still near me — good time to kick it toward their goal
+    shouldJump = Math.random() < diff.jumpChance * 0.9;
+    urgency = 0.7;
   } else if (ballClose && ballOnMySide) {
     // Ball nearby on my side — go for it
-    shouldJump = Math.random() < diff.jumpChance * 0.8;
+    shouldJump = Math.random() < diff.jumpChance * 0.7;
     urgency = 0.6;
   } else if (ballComingToMe) {
-    // Ball heading toward me — prepare to intercept
-    shouldJump = Math.random() < diff.jumpChance * 0.5;
-    urgency = 0.4;
+    // Ball heading toward me — wait for it to get closer before jumping
+    if (distToBall < 350) {
+      shouldJump = Math.random() < diff.jumpChance * 0.6;
+      urgency = 0.4;
+    }
   } else if (!ballOnMySide && distToBall < 400) {
-    // Ball on opponent's side but reachable — attack
-    shouldJump = Math.random() < diff.jumpChance * 0.4;
-    urgency = 0.3;
+    // Ball on opponent's side but reachable — only attack sometimes
+    shouldJump = Math.random() < diff.jumpChance * 0.25;
+    urgency = 0.2;
   }
 
   if (shouldJump) {
@@ -392,22 +408,16 @@ function updateAI(dt) {
     const wantDir = ballX > cpu.x ? 1 : -1;
 
     if (diff.waitForAngle) {
-      // Smart AI: wait for tilt to align with desired direction
-      // Jump when tilting toward the ball (tiltDir matches wantDir)
       const alignment = tiltDir * wantDir;
 
       if (alignment > 0.15) {
-        // Good angle — jump now
         jumpPlayer(cpu);
         aiDecisionCooldown = diff.reactionDelay;
       } else if (urgency >= 0.8 && alignment > -0.1) {
-        // Very urgent and angle is at least neutral — jump anyway
         jumpPlayer(cpu);
         aiDecisionCooldown = diff.reactionDelay;
       }
-      // Otherwise wait for a better tilt angle (don't set cooldown)
     } else {
-      // Dumb AI: just jump whenever, don't care about angle
       if (tiltDir * wantDir > -0.3) {
         jumpPlayer(cpu);
         aiDecisionCooldown = diff.reactionDelay;
@@ -416,10 +426,10 @@ function updateAI(dt) {
   }
 
   // Idle jump: if nothing has happened for a while, jump to stay active
-  if (!shouldJump && aiDecisionCooldown <= -2.0) {
-    if (Math.random() < 0.2) {
+  if (!shouldJump && aiDecisionCooldown <= -2.5) {
+    if (Math.random() < 0.15) {
       jumpPlayer(cpu);
-      aiDecisionCooldown = diff.reactionDelay + 0.3;
+      aiDecisionCooldown = diff.reactionDelay + 0.5;
     }
   }
 }
