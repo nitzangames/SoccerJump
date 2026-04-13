@@ -3,7 +3,7 @@ import { World, Body, Circle, Rectangle, Edge, Vec2 } from './physics2d/index.js
 // --- Constants ---
 const CANVAS_W = 1080;
 const CANVAS_H = 1920;
-const VERSION = 'v1.3.0';
+const VERSION = 'v1.4.0';
 
 // Field dimensions (in canvas pixels)
 const FIELD_TOP = 160;
@@ -311,6 +311,8 @@ let mpOpponentId = null;
 let mpLastSendTime = 0;
 const MP_SEND_INTERVAL = 1 / 30; // 30 Hz state updates
 let mpRemoteJumpPending = false; // joiner sets this; host reads it next update
+let mpRematchLocal = false;
+let mpRematchRemote = false;
 
 // Local player index: host controls right/blue (index 1), joiner controls left/red (index 0)
 function getLocalPlayerIdx() {
@@ -479,6 +481,14 @@ function getPauseMenuButtons() {
   };
 }
 
+// Match-over buttons (multiplayer version with rematch + exit)
+function getMatchOverButtons() {
+  return {
+    rematch: { x: CANVAS_W / 2 - 280, y: CANVAS_H / 2 + 110, w: 560, h: 100 },
+    exit:    { x: CANVAS_W / 2 - 280, y: CANVAS_H / 2 + 250, w: 560, h: 100 },
+  };
+}
+
 function pointInRect(p, r) {
   return p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
 }
@@ -521,9 +531,18 @@ canvas.addEventListener('pointerdown', (e) => {
     }
   } else if (gameState === 'matchOver') {
     if (gameMode === 'multiplayer') {
-      // Return to menu; don't auto-restart in multiplayer
-      leaveMultiplayer();
-      gameState = 'menu';
+      const btns = getMatchOverButtons();
+      if (pointInRect(p, btns.rematch)) {
+        if (!mpRematchLocal) {
+          mpRematchLocal = true;
+          if (mpRoom) mpRoom.send({ rematch: true });
+          // Host: if opponent also agreed, start immediately
+          if (mpIsHost && mpRematchRemote) startRematch();
+        }
+      } else if (pointInRect(p, btns.exit)) {
+        leaveMultiplayer();
+        gameState = 'menu';
+      }
     } else {
       scores = [0, 0];
       resetRound();
@@ -567,16 +586,18 @@ function startMultiplayer() {
       window._soccerJumpMpWired = true;
 
       window.PlaySDK.multiplayer.on('game', (fromUserId, payload) => {
-        if (gameMode !== 'multiplayer') return;
+        if (gameMode !== 'multiplayer' || !payload) return;
+
+        // Rematch flag from opponent — handled by both sides
+        if (payload.rematch) {
+          mpRematchRemote = true;
+          if (mpIsHost && mpRematchLocal) startRematch();
+        }
 
         if (mpIsHost) {
-          // Host receives only jump events from joiner
-          if (payload && payload.jump) {
-            mpRemoteJumpPending = true;
-          }
+          if (payload.jump) mpRemoteJumpPending = true;
         } else {
-          // Joiner receives full game state from host
-          if (payload && payload.s) applyHostState(payload);
+          if (payload.s) applyHostState(payload);
         }
       });
 
@@ -606,7 +627,19 @@ function leaveMultiplayer() {
   mpIsHost = false;
   mpOpponentId = null;
   mpRemoteJumpPending = false;
+  mpRematchLocal = false;
+  mpRematchRemote = false;
   gameMode = 'cpu';
+}
+
+// Host starts a new match (both players agreed to rematch)
+function startRematch() {
+  mpRematchLocal = false;
+  mpRematchRemote = false;
+  scores = [0, 0];
+  resetRound();
+  gameState = 'playing';
+  // Next broadcast will carry the new state to the joiner
 }
 
 // Host broadcasts full game state to joiner
@@ -666,6 +699,11 @@ function applyHostState(msg) {
   } else if (msg.gs === 'matchOver') {
     gameState = 'matchOver';
   } else if (msg.gs === 'playing') {
+    // Rematch started — clear local rematch flags
+    if (gameState === 'matchOver') {
+      mpRematchLocal = false;
+      mpRematchRemote = false;
+    }
     gameState = 'playing';
   }
 }
@@ -1140,12 +1178,11 @@ function drawMenu() {
 }
 
 function drawMatchOver() {
-  // In multiplayer, local player might be red (left) or blue (right)
   const localIdx = getLocalPlayerIdx();
   const myScore = scores[localIdx];
   const iWon = myScore >= WIN_SCORE;
 
-  ctx.fillStyle = 'rgba(0,0,0,0.6)';
+  ctx.fillStyle = 'rgba(0,0,0,0.7)';
   ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
 
   ctx.fillStyle = iWon ? '#4dabf7' : '#e74c3c';
@@ -1157,11 +1194,43 @@ function drawMatchOver() {
   ctx.font = 'bold 64px monospace';
   ctx.fillText(`${scores[0]} - ${scores[1]}`, CANVAS_W / 2, CANVAS_H / 2 + 40);
 
-  const pulse = Math.sin(performance.now() / 500) * 0.3 + 0.7;
-  ctx.fillStyle = `rgba(255,255,255,${pulse * 0.6})`;
-  ctx.font = '36px monospace';
-  const prompt = gameMode === 'multiplayer' ? 'TAP TO RETURN' : 'TAP TO PLAY AGAIN';
-  ctx.fillText(prompt, CANVAS_W / 2, CANVAS_H / 2 + 140);
+  if (gameMode === 'multiplayer') {
+    const btns = getMatchOverButtons();
+
+    // Rematch button — label changes based on state
+    const rematchDone = mpRematchLocal;
+    const opponentReady = mpRematchRemote;
+    let rematchLabel;
+    if (rematchDone && !opponentReady) rematchLabel = 'WAITING...';
+    else if (rematchDone && opponentReady) rematchLabel = 'STARTING...';
+    else if (!rematchDone && opponentReady) rematchLabel = 'REMATCH (THEY AGREED!)';
+    else rematchLabel = 'REMATCH';
+
+    ctx.fillStyle = rematchDone ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.1)';
+    ctx.fillRect(btns.rematch.x, btns.rematch.y, btns.rematch.w, btns.rematch.h);
+    ctx.strokeStyle = rematchDone ? 'rgba(255,255,255,0.3)' : (opponentReady ? '#4dabf7' : 'rgba(255,255,255,0.5)');
+    ctx.lineWidth = 3;
+    ctx.strokeRect(btns.rematch.x, btns.rematch.y, btns.rematch.w, btns.rematch.h);
+    ctx.fillStyle = rematchDone ? 'rgba(255,255,255,0.5)' : 'white';
+    const labelSize = rematchLabel.length > 12 ? 32 : 44;
+    ctx.font = `bold ${labelSize}px monospace`;
+    ctx.fillText(rematchLabel, CANVAS_W / 2, btns.rematch.y + 68);
+
+    // Exit button
+    ctx.fillStyle = 'rgba(255,255,255,0.1)';
+    ctx.fillRect(btns.exit.x, btns.exit.y, btns.exit.w, btns.exit.h);
+    ctx.strokeStyle = 'rgba(255,107,138,0.6)';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(btns.exit.x, btns.exit.y, btns.exit.w, btns.exit.h);
+    ctx.fillStyle = '#ff6b8a';
+    ctx.font = 'bold 44px monospace';
+    ctx.fillText('EXIT TO MENU', CANVAS_W / 2, btns.exit.y + 68);
+  } else {
+    const pulse = Math.sin(performance.now() / 500) * 0.3 + 0.7;
+    ctx.fillStyle = `rgba(255,255,255,${pulse * 0.6})`;
+    ctx.font = '36px monospace';
+    ctx.fillText('TAP TO PLAY AGAIN', CANVAS_W / 2, CANVAS_H / 2 + 140);
+  }
 }
 
 function draw() {
