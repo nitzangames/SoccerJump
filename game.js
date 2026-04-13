@@ -3,7 +3,7 @@ import { World, Body, Circle, Rectangle, Edge, Vec2 } from './physics2d/index.js
 // --- Constants ---
 const CANVAS_W = 1080;
 const CANVAS_H = 1920;
-const VERSION = 'v1.2.1';
+const VERSION = 'v1.3.0';
 
 // Field dimensions (in canvas pixels)
 const FIELD_TOP = 160;
@@ -466,6 +466,19 @@ function getMenuButtons() {
   };
 }
 
+// Pause button rect (top-center, above HUD)
+function getPauseButton() {
+  return { x: CANVAS_W / 2 - 36, y: 20, w: 72, h: 60 };
+}
+
+// Pause menu button rects
+function getPauseMenuButtons() {
+  return {
+    resume: { x: CANVAS_W / 2 - 280, y: CANVAS_H / 2 - 20, w: 560, h: 100 },
+    exit:   { x: CANVAS_W / 2 - 280, y: CANVAS_H / 2 + 120, w: 560, h: 100 },
+  };
+}
+
 function pointInRect(p, r) {
   return p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
 }
@@ -484,13 +497,27 @@ canvas.addEventListener('pointerdown', (e) => {
     } else if (pointInRect(p, btns.vsPlayer)) {
       startMultiplayer();
     }
-  } else if (gameState === 'playing') {
-    if (gameMode === 'multiplayer' && !mpIsHost) {
-      // Joiner: send jump input to host, don't jump locally
-      if (mpRoom) mpRoom.send({ jump: true });
-    } else {
-      // Single player or host: jump the local player
-      jumpPlayer(players[getLocalPlayerIdx()]);
+  } else if (gameState === 'paused') {
+    const btns = getPauseMenuButtons();
+    if (pointInRect(p, btns.resume)) {
+      gameState = 'playing';
+    } else if (pointInRect(p, btns.exit)) {
+      if (gameMode === 'multiplayer') leaveMultiplayer();
+      gameState = 'menu';
+    }
+  } else if (gameState === 'playing' || gameState === 'goalScored') {
+    // Check pause button first
+    if (pointInRect(p, getPauseButton())) {
+      gameState = 'paused';
+      return;
+    }
+    // Jumps only allowed during 'playing' state
+    if (gameState === 'playing') {
+      if (gameMode === 'multiplayer' && !mpIsHost) {
+        if (mpRoom) mpRoom.send({ jump: true });
+      } else {
+        jumpPlayer(players[getLocalPlayerIdx()]);
+      }
     }
   } else if (gameState === 'matchOver') {
     if (gameMode === 'multiplayer') {
@@ -1017,11 +1044,17 @@ function drawHUD() {
   ctx.textAlign = 'right';
   ctx.fillText(rightLabel, CANVAS_W - 160, 110);
 
-  // Center label
-  ctx.fillStyle = 'rgba(255,255,255,0.3)';
-  ctx.font = '24px monospace';
-  ctx.textAlign = 'center';
-  ctx.fillText('FIRST TO 5', CANVAS_W / 2, 100);
+  // Pause button (top-center, above the score labels)
+  const pb = getPauseButton();
+  ctx.fillStyle = 'rgba(255,255,255,0.1)';
+  ctx.fillRect(pb.x, pb.y, pb.w, pb.h);
+  ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(pb.x, pb.y, pb.w, pb.h);
+  // Pause icon (two bars)
+  ctx.fillStyle = 'rgba(255,255,255,0.7)';
+  ctx.fillRect(pb.x + 20, pb.y + 14, 10, 32);
+  ctx.fillRect(pb.x + 42, pb.y + 14, 10, 32);
 
   // Goal flash overlay
   if (gameState === 'goalScored' && goalFlashTimer > 0) {
@@ -1034,6 +1067,40 @@ function drawHUD() {
     ctx.textAlign = 'center';
     ctx.fillText('GOAL!', CANVAS_W / 2, CANVAS_H / 2);
   }
+}
+
+function drawPauseMenu() {
+  // Dark overlay
+  ctx.fillStyle = 'rgba(0,0,0,0.7)';
+  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
+  // "PAUSED" title
+  ctx.fillStyle = 'white';
+  ctx.font = 'bold 120px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('PAUSED', CANVAS_W / 2, CANVAS_H / 2 - 140);
+
+  const btns = getPauseMenuButtons();
+
+  // Resume button
+  ctx.fillStyle = 'rgba(255,255,255,0.1)';
+  ctx.fillRect(btns.resume.x, btns.resume.y, btns.resume.w, btns.resume.h);
+  ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(btns.resume.x, btns.resume.y, btns.resume.w, btns.resume.h);
+  ctx.fillStyle = 'white';
+  ctx.font = 'bold 44px monospace';
+  ctx.fillText('RESUME', CANVAS_W / 2, btns.resume.y + 68);
+
+  // Exit button
+  ctx.fillStyle = 'rgba(255,255,255,0.1)';
+  ctx.fillRect(btns.exit.x, btns.exit.y, btns.exit.w, btns.exit.h);
+  ctx.strokeStyle = 'rgba(255,107,138,0.6)';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(btns.exit.x, btns.exit.y, btns.exit.w, btns.exit.h);
+  ctx.fillStyle = '#ff6b8a';
+  ctx.font = 'bold 44px monospace';
+  ctx.fillText('EXIT TO MENU', CANVAS_W / 2, btns.exit.y + 68);
 }
 
 function drawMenu() {
@@ -1116,6 +1183,12 @@ function draw() {
     drawBall();
     drawParticles();
     drawHUD();
+  } else if (gameState === 'paused') {
+    drawPlayer(players[0]);
+    drawPlayer(players[1]);
+    drawBall();
+    drawHUD();
+    drawPauseMenu();
   } else if (gameState === 'matchOver') {
     drawPlayer(players[0]);
     drawPlayer(players[1]);
