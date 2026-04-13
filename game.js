@@ -3,7 +3,7 @@ import { World, Body, Circle, Rectangle, Edge, Vec2 } from './physics2d/index.js
 // --- Constants ---
 const CANVAS_W = 1080;
 const CANVAS_H = 1920;
-const VERSION = 'v1.1.2';
+const VERSION = 'v1.2.0';
 
 // Field dimensions (in canvas pixels)
 const FIELD_TOP = 160;
@@ -298,10 +298,25 @@ function triggerShake(intensity, duration) {
 
 // Game state
 let gameState = 'menu';
-let scores = [0, 0]; // [CPU, human]
+let scores = [0, 0]; // [left, right] = [CPU/remote, human/local]
 const WIN_SCORE = 5;
 let goalFlashTimer = 0;
 let lastScorer = '';
+
+// Multiplayer state
+let gameMode = 'cpu'; // 'cpu' or 'multiplayer'
+let mpIsHost = false;
+let mpRoom = null;
+let mpOpponentId = null;
+let mpLastSendTime = 0;
+const MP_SEND_INTERVAL = 1 / 30; // 30 Hz state updates
+let mpRemoteJumpPending = false; // joiner sets this; host reads it next update
+
+// Local player index: host controls right/blue (index 1), joiner controls left/red (index 0)
+function getLocalPlayerIdx() {
+  if (gameMode !== 'multiplayer') return 1;
+  return mpIsHost ? 1 : 0;
+}
 
 // --- Canvas Setup ---
 const canvas = document.getElementById('c');
@@ -434,20 +449,199 @@ function updateAI(dt) {
   }
 }
 
+function screenToCanvas(clientX, clientY) {
+  const rect = canvas.getBoundingClientRect();
+  const sx = canvas.width / rect.width;
+  const sy = canvas.height / rect.height;
+  return { x: (clientX - rect.left) * sx, y: (clientY - rect.top) * sy };
+}
+
+// Menu button rects (y coords relative to canvas)
+function getMenuButtons() {
+  const y1 = FIELD_BOTTOM + 400;
+  const y2 = FIELD_BOTTOM + 560;
+  return {
+    vsCpu:    { x: CANVAS_W / 2 - 280, y: y1 - 60, w: 560, h: 100 },
+    vsPlayer: { x: CANVAS_W / 2 - 280, y: y2 - 60, w: 560, h: 100 },
+  };
+}
+
+function pointInRect(p, r) {
+  return p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
+}
+
 canvas.addEventListener('pointerdown', (e) => {
   e.preventDefault();
+  const p = screenToCanvas(e.clientX, e.clientY);
+
   if (gameState === 'menu') {
-    scores = [0, 0];
-    resetRound();
-    gameState = 'playing';
+    const btns = getMenuButtons();
+    if (pointInRect(p, btns.vsCpu)) {
+      gameMode = 'cpu';
+      scores = [0, 0];
+      resetRound();
+      gameState = 'playing';
+    } else if (pointInRect(p, btns.vsPlayer)) {
+      startMultiplayer();
+    }
   } else if (gameState === 'playing') {
-    jumpPlayer(players[1]);
+    if (gameMode === 'multiplayer' && !mpIsHost) {
+      // Joiner: send jump input to host, don't jump locally
+      if (mpRoom) mpRoom.send({ jump: true });
+    } else {
+      // Single player or host: jump the local player
+      jumpPlayer(players[getLocalPlayerIdx()]);
+    }
   } else if (gameState === 'matchOver') {
-    scores = [0, 0];
-    resetRound();
-    gameState = 'playing';
+    if (gameMode === 'multiplayer') {
+      // Return to menu; don't auto-restart in multiplayer
+      leaveMultiplayer();
+      gameState = 'menu';
+    } else {
+      scores = [0, 0];
+      resetRound();
+      gameState = 'playing';
+    }
   }
 });
+
+// --- Multiplayer ---
+function startMultiplayer() {
+  if (typeof window.PlaySDK === 'undefined' || !window.PlaySDK.multiplayer) {
+    console.warn('PlaySDK.multiplayer not available');
+    return;
+  }
+
+  window.PlaySDK.onReady(() => {
+    window.PlaySDK.multiplayer.showLobby({
+      maxPlayers: 2,
+      onStart: () => {
+        const room = window.PlaySDK.multiplayer.getRoom();
+        if (!room) return;
+        mpRoom = room;
+        mpIsHost = room.isHost;
+        mpOpponentId = room.players.find(pl => pl.userId !== room.players.find(x => x.userId === room.hostId || !x.userId).userId)?.userId || null;
+        // Simpler: opponent = any player that isn't us
+        const myId = room.players.find(pl => room.isHost ? pl.userId === room.hostId : pl.userId !== room.hostId)?.userId;
+        mpOpponentId = room.players.find(pl => pl.userId !== myId)?.userId || null;
+
+        gameMode = 'multiplayer';
+        scores = [0, 0];
+        resetRound();
+        gameState = 'playing';
+      },
+      onCancel: () => {
+        leaveMultiplayer();
+      },
+    });
+
+    // Register event listeners (only once)
+    if (!window._soccerJumpMpWired) {
+      window._soccerJumpMpWired = true;
+
+      window.PlaySDK.multiplayer.on('game', (fromUserId, payload) => {
+        if (gameMode !== 'multiplayer') return;
+
+        if (mpIsHost) {
+          // Host receives only jump events from joiner
+          if (payload && payload.jump) {
+            mpRemoteJumpPending = true;
+          }
+        } else {
+          // Joiner receives full game state from host
+          if (payload && payload.s) applyHostState(payload);
+        }
+      });
+
+      window.PlaySDK.multiplayer.on('playerLeft', () => {
+        if (gameMode === 'multiplayer') {
+          // Opponent left — end match
+          leaveMultiplayer();
+          gameState = 'menu';
+        }
+      });
+
+      window.PlaySDK.multiplayer.on('disconnected', () => {
+        if (gameMode === 'multiplayer') {
+          leaveMultiplayer();
+          gameState = 'menu';
+        }
+      });
+    }
+  });
+}
+
+function leaveMultiplayer() {
+  if (mpRoom) {
+    try { mpRoom.leave(); } catch (e) {}
+  }
+  mpRoom = null;
+  mpIsHost = false;
+  mpOpponentId = null;
+  mpRemoteJumpPending = false;
+  gameMode = 'cpu';
+}
+
+// Host broadcasts full game state to joiner
+function sendHostState() {
+  if (!mpRoom) return;
+  mpRoom.send({
+    s: 1, // marker for "host state packet"
+    ball: {
+      x: ballBody.position.x,
+      y: ballBody.position.y,
+      vx: ballBody.velocity.x,
+      vy: ballBody.velocity.y,
+    },
+    p0: {
+      x: players[0].x, y: players[0].y,
+      angle: players[0].angle,
+      isAirborne: players[0].isAirborne,
+      tiltPhase: players[0].tiltPhase,
+    },
+    p1: {
+      x: players[1].x, y: players[1].y,
+      angle: players[1].angle,
+      isAirborne: players[1].isAirborne,
+      tiltPhase: players[1].tiltPhase,
+    },
+    scores: [scores[0], scores[1]],
+    gs: gameState,
+    gf: goalFlashTimer,
+  });
+}
+
+// Joiner applies host state
+function applyHostState(msg) {
+  ballBody.setPosition(msg.ball.x, msg.ball.y);
+  ballBody.setVelocity(msg.ball.vx, msg.ball.vy);
+
+  players[0].x = msg.p0.x;
+  players[0].y = msg.p0.y;
+  players[0].angle = msg.p0.angle;
+  players[0].isAirborne = msg.p0.isAirborne;
+  players[0].tiltPhase = msg.p0.tiltPhase;
+
+  players[1].x = msg.p1.x;
+  players[1].y = msg.p1.y;
+  players[1].angle = msg.p1.angle;
+  players[1].isAirborne = msg.p1.isAirborne;
+  players[1].tiltPhase = msg.p1.tiltPhase;
+
+  scores[0] = msg.scores[0];
+  scores[1] = msg.scores[1];
+  goalFlashTimer = msg.gf;
+
+  // Only update gameState on meaningful transitions
+  if (msg.gs === 'goalScored' && gameState === 'playing') {
+    gameState = 'goalScored';
+    triggerShake(15, 0.3);
+  } else if (msg.gs === 'matchOver') {
+    gameState = 'matchOver';
+  } else if (msg.gs === 'playing') {
+    gameState = 'playing';
+  }
+}
 
 // --- Game Loop ---
 let lastTime = performance.now();
@@ -534,9 +728,35 @@ function resetRound() {
 }
 
 function update(dt) {
+  // Joiner in multiplayer mode: no local simulation, state comes from host
+  if (gameMode === 'multiplayer' && !mpIsHost) {
+    updateParticles(dt);
+    if (gameState === 'playing' || gameState === 'goalScored') {
+      if (ballBody.velocity.length() > 200) {
+        spawnParticle(ballBody.position.x, ballBody.position.y, 'white');
+      }
+    }
+    if (gameState === 'goalScored') {
+      goalFlashTimer -= dt;
+    }
+    return;
+  }
+
+  // Host or single-player
   if (gameState === 'playing') {
+    // Apply remote jump for the left/red player if multiplayer host
+    if (gameMode === 'multiplayer' && mpIsHost && mpRemoteJumpPending) {
+      jumpPlayer(players[0]);
+      mpRemoteJumpPending = false;
+    }
+
     updatePlayers(dt);
-    updateAI(dt);
+
+    // AI only runs in CPU mode
+    if (gameMode === 'cpu') {
+      updateAI(dt);
+    }
+
     world.step(dt);
     updateParticles(dt);
 
@@ -567,6 +787,15 @@ function update(dt) {
         resetRound();
         gameState = 'playing';
       }
+    }
+  }
+
+  // Host broadcasts state periodically
+  if (gameMode === 'multiplayer' && mpIsHost && mpRoom) {
+    mpLastSendTime += dt;
+    if (mpLastSendTime >= MP_SEND_INTERVAL) {
+      mpLastSendTime = 0;
+      sendHostState();
     }
   }
 }
@@ -768,11 +997,16 @@ function drawHUD() {
   ctx.textAlign = 'left';
   ctx.fillText(scores[0], 60, 110);
 
+  // Labels differ based on game mode and local player side
+  const localIdx = getLocalPlayerIdx();
+  const leftLabel = gameMode === 'multiplayer' ? (localIdx === 0 ? 'YOU' : 'OPP') : 'CPU';
+  const rightLabel = gameMode === 'multiplayer' ? (localIdx === 1 ? 'YOU' : 'OPP') : 'YOU';
+
   ctx.fillStyle = 'rgba(255,255,255,0.4)';
   ctx.font = '28px monospace';
-  ctx.fillText('CPU', 160, 110);
+  ctx.fillText(leftLabel, 160, 110);
 
-  // Human score (right)
+  // Right score
   ctx.fillStyle = HUMAN_COLOR;
   ctx.font = 'bold 80px monospace';
   ctx.textAlign = 'right';
@@ -781,7 +1015,7 @@ function drawHUD() {
   ctx.fillStyle = 'rgba(255,255,255,0.4)';
   ctx.font = '28px monospace';
   ctx.textAlign = 'right';
-  ctx.fillText('YOU', CANVAS_W - 160, 110);
+  ctx.fillText(rightLabel, CANVAS_W - 160, 110);
 
   // Center label
   ctx.fillStyle = 'rgba(255,255,255,0.3)';
@@ -810,11 +1044,27 @@ function drawMenu() {
   ctx.fillText('SOCCER', CANVAS_W / 2, FIELD_BOTTOM + 160);
   ctx.fillText('JUMP', CANVAS_W / 2, FIELD_BOTTOM + 280);
 
-  // Pulsing tap prompt
-  const pulse = Math.sin(performance.now() / 500) * 0.3 + 0.7;
-  ctx.fillStyle = `rgba(255,255,255,${pulse * 0.6})`;
-  ctx.font = '36px monospace';
-  ctx.fillText('TAP TO PLAY', CANVAS_W / 2, FIELD_BOTTOM + 420);
+  const btns = getMenuButtons();
+
+  // VS CPU button
+  ctx.fillStyle = 'rgba(255,255,255,0.1)';
+  ctx.fillRect(btns.vsCpu.x, btns.vsCpu.y, btns.vsCpu.w, btns.vsCpu.h);
+  ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(btns.vsCpu.x, btns.vsCpu.y, btns.vsCpu.w, btns.vsCpu.h);
+  ctx.fillStyle = 'white';
+  ctx.font = 'bold 44px monospace';
+  ctx.fillText('VS CPU', CANVAS_W / 2, btns.vsCpu.y + 68);
+
+  // VS PLAYER button
+  ctx.fillStyle = 'rgba(255,255,255,0.1)';
+  ctx.fillRect(btns.vsPlayer.x, btns.vsPlayer.y, btns.vsPlayer.w, btns.vsPlayer.h);
+  ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(btns.vsPlayer.x, btns.vsPlayer.y, btns.vsPlayer.w, btns.vsPlayer.h);
+  ctx.fillStyle = 'white';
+  ctx.font = 'bold 44px monospace';
+  ctx.fillText('VS PLAYER', CANVAS_W / 2, btns.vsPlayer.y + 68);
 
   // Version
   ctx.fillStyle = 'rgba(255,255,255,0.3)';
@@ -823,15 +1073,18 @@ function drawMenu() {
 }
 
 function drawMatchOver() {
-  const humanWon = scores[1] >= WIN_SCORE;
+  // In multiplayer, local player might be red (left) or blue (right)
+  const localIdx = getLocalPlayerIdx();
+  const myScore = scores[localIdx];
+  const iWon = myScore >= WIN_SCORE;
 
   ctx.fillStyle = 'rgba(0,0,0,0.6)';
   ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
 
-  ctx.fillStyle = humanWon ? '#4dabf7' : '#e74c3c';
+  ctx.fillStyle = iWon ? '#4dabf7' : '#e74c3c';
   ctx.font = 'bold 100px monospace';
   ctx.textAlign = 'center';
-  ctx.fillText(humanWon ? 'YOU WIN!' : 'YOU LOSE', CANVAS_W / 2, CANVAS_H / 2 - 60);
+  ctx.fillText(iWon ? 'YOU WIN!' : 'YOU LOSE', CANVAS_W / 2, CANVAS_H / 2 - 60);
 
   ctx.fillStyle = 'white';
   ctx.font = 'bold 64px monospace';
@@ -840,7 +1093,8 @@ function drawMatchOver() {
   const pulse = Math.sin(performance.now() / 500) * 0.3 + 0.7;
   ctx.fillStyle = `rgba(255,255,255,${pulse * 0.6})`;
   ctx.font = '36px monospace';
-  ctx.fillText('TAP TO PLAY AGAIN', CANVAS_W / 2, CANVAS_H / 2 + 140);
+  const prompt = gameMode === 'multiplayer' ? 'TAP TO RETURN' : 'TAP TO PLAY AGAIN';
+  ctx.fillText(prompt, CANVAS_W / 2, CANVAS_H / 2 + 140);
 }
 
 function draw() {
